@@ -120,7 +120,47 @@ echo "your question" | ./think.sh       # piped on stdin
 
 > Note: "strawberry" has **3** r's. SmallThinker is a 3B model — its chain-of-thought is a *draft*, not ground truth. It scores 8/10 on math in our Jetson benchmark but only 6.4/10 overall; always sanity-check its final answer against your own reasoning.
 
-## Benchmarks (this Jetson, August 2026)
+## Benchmarks
+
+The model was benchmarked against the full 10-prompt suite from our prior LLM benchmark projects (5 general + 5 coding). Full results in `Deep_SmallThinker_3B_Benchmark_Report.pdf` and `results/`.
+
+### Headline result
+
+| Metric | Value |
+|--------|-------|
+| Average quality | **6.4/10** (identical to the earlier temp-0.3 run) |
+| Average generation speed | **20.0 tok/s** |
+| Average prompt-eval speed | **409 tok/s** |
+| Verifiable tasks (code/math/coding) | **7–8/10** |
+| Open-ended creative/prose | **3–4/10** (meta-reasoning loop) |
+
+**The finding:** deep thinking (temp 1.0 + excess tokens) does *not* raise average quality — it *shifts* where quality lands. Structured tasks with a checkable answer benefit from the extra step-by-step reasoning. Open-ended creative tasks collapse: the model enters a "I need to write X… first I should… let me think…" loop and never emits the deliverable, burning the whole 8192-token budget on thinking-about-thinking.
+
+### Re-running the benchmark
+
+```bash
+python3 benchmark.py        # ~15 min, writes results/benchmark_results.json
+python3 score_quality.py    # metrics summary table
+python3 render_report.py    # merges metrics + quality scores
+python3 build_report_pdf.py # renders the PDF report
+```
+
+### Per-prompt table
+
+| Prompt | Suite | Gen t/s | Think % | Quality |
+|--------|-------|---------|---------|---------|
+| code | general | 19.9 | 15% | 8 |
+| iambic | general | 20.0 | 91% | 4 |
+| prose | general | 20.1 | 100% | 7 |
+| creative | general | 20.1 | 100% | 3 |
+| math | general | 20.0 | 98% | 8 |
+| html | coding | 20.1 | 73% | 7 |
+| python | coding | 20.0 | 3% | 8 |
+| c | coding | 19.9 | 15% | 8 |
+| basic | coding | 20.1 | 93% | 4 |
+| julia | coding | 20.1 | 38% | 7 |
+
+### Older benchmark (prior project, temp 0.3)
 
 | Quant | Size | Gen tok/s | Prompt tok/s |
 |-------|------|-----------|--------------|
@@ -133,11 +173,21 @@ Q4_K_M is chosen for this project because the smaller weights free ~1.3 GB, whic
 
 ```
 deep-smallthinker-3b/
-├── think.sh                 # main launch script (single-turn deep reasoning)
+├── think.sh                        # main launch script (single-turn deep reasoning)
+├── benchmark.py                    # runs the 10-prompt benchmark suite
+├── score_quality.py                # metrics summary (tok/s, thinking ratio)
+├── render_report.py                # merges metrics + quality scores
+├── build_report_pdf.py             # renders the PDF report (reportlab)
+├── Deep_SmallThinker_3B_Benchmark_Report.pdf   # the findings PDF
 ├── scripts/
-│   └── download-model.sh    # fetches the Q4_K_M GGUF
+│   └── download-model.sh           # fetches the Q4_K_M GGUF
 ├── prompts/
-│   └── samples.txt          # reasoning test prompts (traps, math, logic, code)
+│   └── samples.txt                 # reasoning test prompts (traps, math, logic, code)
+├── results/
+│   ├── benchmark_results.json      # raw per-prompt metrics + full output text
+│   ├── benchmark_summary.json      # metrics summary
+│   ├── benchmark_final.json        # merged metrics + quality scores
+│   └── quality_scores.json         # 1-10 quality scores + key finding
 └── README.md
 ```
 

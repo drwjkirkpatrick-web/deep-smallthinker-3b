@@ -1,0 +1,24 @@
+{
+  "model": "SmallThinker-3B-Preview (Q4_K_M)",
+  "settings": {
+    "temp": 1.0,
+    "ctx": 32768,
+    "n_tokens": 8192,
+    "note": "Deep-thinking: high temp + excess tokens (NOT the temp 0.3 of prior benchmarks)"
+  },
+  "quality_scores": {
+    "code":     {"score": 8, "notes": "Complete merge_sort with type hints, docstring, edge cases. Correct."},
+    "iambic":   {"score": 4, "notes": "Thinking loop consumed budget; poem truncated/incomplete, meter unverified."},
+    "prose":    {"score": 7, "notes": "Medically accurate and thorough, but framed as meta-reasoning (no clean answer)."},
+    "creative": {"score": 3, "notes": "FAILURE: 7578 chars of 'I need to write a scene... let me think' meta-loop, no actual scene."},
+    "math":     {"score": 8, "notes": "Correct, complete proof by contradiction of sqrt(2) irrationality."},
+    "html":     {"score": 7, "notes": "Full page with header/hero/about/grid/footer, flexbox + media query."},
+    "python":   {"score": 8, "notes": "Complete DataProcessor class, csv+json, error handling. 14899 chars of code."},
+    "c":        {"score": 8, "notes": "Complete thread-safe linked-list queue with pthread mutex. 17928 chars."},
+    "basic":    {"score": 4, "notes": "Thinking loop ate budget; BASIC program truncated (501 char answer)."},
+    "julia":    {"score": 7, "notes": "Complete Newton-Raphson with iteration table and docstring."}
+  },
+  "average_quality": 6.4,
+  "prior_temp_0.3_average": 6.4,
+  "key_finding": "Deep-thinking settings (temp 1.0, excess tokens) do NOT change average quality vs temp 0.3 (both 6.4/10). They SHIFT where quality goes: code/math/coding tasks score 8/10 (careful step-by-step reasoning helps), but open-ended creative/prose tasks collapse to 3-4/10 because the model enters a meta-reasoning LOOP ('I need to write X... first I should... let me think...') and never emits the actual deliverable, burning the entire 8192-token budget on thinking-about-thinking."
+}
