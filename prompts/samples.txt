@@ -1,0 +1,26 @@
+# Sample reasoning prompts for deep-smallthinker-3b.
+# One per line; blank lines and #-comments are ignored.
+
+# Counting / letter-tricks (classic LLM traps)
+How many r's are in the word strawberry?
+How many e's are in the word elephant?
+
+# Word problems with a twist
+A farmer has 17 sheep. All but 9 die. How many sheep are left?
+A bat and a ball cost $1.10 total. The bat costs $1.00 more than the ball. How much is the ball?
+
+# Math
+What is the sum of all integers from 1 to 100?
+Prove that sqrt(2) is irrational.
+
+# Logic
+You have 3 light switches outside a closed room with 3 bulbs. You may enter once. How do you match switches to bulbs?
+There are 3 boxes: one has only apples, one only oranges, one both. Labels are all wrong. With one draw from one box, can you relabel correctly?
+
+# Code reasoning
+Explain step by step how a binary search finds an element in a sorted array.
+Write a function that returns the nth Fibonacci number using memoization.
+
+# Science / estimation
+Estimate how many piano tuners are in a city of 1 million people.
+Why does ice float on water?
