@@ -9,10 +9,10 @@
 #   ./think.sh "your question here"
 #   PROMPT_FILE=/path/to/prompt.txt ./think.sh
 #
-# GUI mode (env GUI_MODE, default "off"):
-#   off  -> context 16384, thinking tokens 8192   (recommended; stop gdm3 first)
-#   on   -> context  8192, thinking tokens 4096   (GUI still running)
+# GUI mode (env GUI_MODE, default "max"):
 #   max  -> context 32768, thinking tokens 16384  (native 32K; GUI MUST be off)
+#   off  -> context 16384, thinking tokens 8192   (GUI off, lighter RAM)
+#   on   -> context  8192, thinking tokens 4096   (GUI still running)
 set -euo pipefail
 
 # --- Paths ---
@@ -20,7 +20,7 @@ LLAMA_CLI="${LLAMA_CLI:-$HOME/llama.cpp/build/bin/llama-cli}"
 MODEL="${MODEL:-$HOME/models/smallthinker-3b-q4_k_m.gguf}"
 
 # --- GUI mode -> context + thinking budget ---
-GUI_MODE="${GUI_MODE:-off}"
+GUI_MODE="${GUI_MODE:-max}"
 case "$GUI_MODE" in
   off) CTX="${CTX:-16384}";  N_TOKENS="${N_TOKENS:-8192}" ;;
   on)  CTX="${CTX:-8192}";   N_TOKENS="${N_TOKENS:-4096}" ;;

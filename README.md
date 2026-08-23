@@ -51,9 +51,9 @@ The context window and thinking budget scale with how much RAM you free:
 
 | Mode | Command | Context | Thinking tokens | Est. runtime | Notes |
 |------|---------|---------|-----------------|--------------|-------|
-| `off` (default) | `GUI_MODE=off ./think.sh "..."` | **16384** | **8192** | ~3.0 GB | Recommended — stop gdm3 first |
+| `max` (default) | `./think.sh "..."` | **32768** | **16384** | ~3.6 GB | Native 32K; GUI MUST be off |
+| `off` | `GUI_MODE=off ./think.sh "..."` | **16384** | **8192** | ~3.0 GB | GUI off, lighter RAM |
 | `on` | `GUI_MODE=on ./think.sh "..."` | 8192 | 4096 | ~2.7 GB | GUI still running |
-| `max` | `GUI_MODE=max ./think.sh "..."` | **32768** | **16384** | ~3.6 GB | Native 32K; GUI MUST be off |
 
 Memory math (measured on this Jetson, 7.4 GiB usable):
 - GUI on → ~4.1 GB free · GUI off → ~4.7 GB free
@@ -64,13 +64,13 @@ Memory math (measured on this Jetson, 7.4 GiB usable):
 ## Settings and rationale
 
 ### Excess thinking tokens (`-n`)
-SmallThinker was trained to emit 8K+ token reasoning chains (the QwQ-LongCoT-500K dataset is >75% samples with >8K output tokens). Default `-n` values truncate this. This project defaults to **8192** thinking tokens (16384 in `max` mode) so the model can reason as long as it wants on a single turn.
+SmallThinker was trained to emit 8K+ token reasoning chains (the QwQ-LongCoT-500K dataset is >75% samples with >8K output tokens). Default `-n` values truncate this. This project defaults to **16384** thinking tokens (the `max` mode) so the model can reason as long as it wants on a single turn.
 
 ### High temperature (`--temp 1.0`)
 The standard advice for reasoning models is a low temperature (0.3–0.6) for determinism. That advice assumes you're paying per token and want one correct answer fast. On this Jetson **tokens are free and time is not a factor**, so we flip it: `--temp 1.0` (the paper's own generation setting) lets the model explore the reasoning tree and re-derive. If you need precision on a math/code problem, override with `TEMP=0.6 ./think.sh "..."`.
 
 ### Context (`-c`)
-Sized for GUI-off operation: 16384 default (comfortable for a short prompt + 8K of thinking), 32768 max (the model's native training context). Both fit comfortably with the GUI stopped.
+Defaults to the model's **native 32K (32768)** context in `max` mode — a short prompt plus up to 16K of thinking fits comfortably with the GUI stopped. `off` mode drops to 16K, `on` mode to 8K for lighter RAM.
 
 ### Single turn (`-st` / `--single-turn`)
 `-st` runs exactly one turn then exits — no interactive REPL, no 260 MB of `>` prompts, no hanging stdin. Combined with `--no-conversation` it is clean and scriptable. This is the core UX: *one question in, one deep answer out*.
