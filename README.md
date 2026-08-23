@@ -125,9 +125,9 @@ echo "your question" | ./think.sh       # piped on stdin
 | Quant | Size | Gen tok/s | Prompt tok/s |
 |-------|------|-----------|--------------|
 | Q8_0 | 3.37 GB | 19.2 | 279 |
-| Q4_K_M | 2.0 GB | ~22–24 (expected) | — |
+| Q4_K_M | 2.1 GB | **20–21** | 172–309 |
 
-Q4_K_M is chosen for this project because the smaller weights free ~1.4 GB, which is exactly what buys the larger context windows (16K–32K) for deep thinking.
+Q4_K_M is chosen for this project because the smaller weights free ~1.3 GB, which is exactly what buys the larger context windows (16K–32K) for deep thinking. Measured on this Jetson, August 2026: the Q4_K_M model correctly solved both the "strawberry r-count" (3) and the bat-and-ball ($0.05) problems with the deep-thinking settings at temp 1.0.
 
 ## Files
 
