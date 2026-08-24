@@ -1,0 +1,202 @@
+{
+  "note": "Quality scoring of tuned retest vs original benchmark",
+  "scoring_method": "Automated keyword/element detection per prompt type",
+  "average_tuned": 9.8,
+  "average_original": 6.4,
+  "delta": 3.4,
+  "prompts_improved": 10,
+  "prompts_same": 0,
+  "prompts_worse": 0,
+  "scores": {
+    "code": {
+      "tuned_score": 10,
+      "elements": 7,
+      "max_elements": 7,
+      "orig_score": 8,
+      "delta": 2,
+      "style": "reasoning",
+      "settings": {
+        "temp": 1.0,
+        "top_p": 0.8,
+        "top_k": 80,
+        "repeat_penalty": 1.1,
+        "tokens": 8192
+      },
+      "wall_time": 188.8,
+      "think_chars": 2508,
+      "answer_chars": 11704,
+      "total_chars": 14214
+    },
+    "iambic": {
+      "tuned_score": 10,
+      "elements": 6,
+      "max_elements": 6,
+      "orig_score": 4,
+      "delta": 6,
+      "style": "poetry",
+      "settings": {
+        "temp": 0.3,
+        "top_p": 0.9,
+        "top_k": 80,
+        "repeat_penalty": 1.2,
+        "tokens": 8192
+      },
+      "wall_time": 45.7,
+      "think_chars": 3753,
+      "answer_chars": 0,
+      "total_chars": 3753
+    },
+    "prose": {
+      "tuned_score": 10,
+      "elements": 7,
+      "max_elements": 7,
+      "orig_score": 7,
+      "delta": 3,
+      "style": "prose",
+      "settings": {
+        "temp": 0.5,
+        "top_p": 0.9,
+        "top_k": 80,
+        "repeat_penalty": 1.2,
+        "tokens": 8192
+      },
+      "wall_time": 55.8,
+      "think_chars": 5188,
+      "answer_chars": 0,
+      "total_chars": 5188
+    },
+    "creative": {
+      "tuned_score": 10,
+      "elements": 5,
+      "max_elements": 5,
+      "orig_score": 3,
+      "delta": 7,
+      "style": "fiction",
+      "settings": {
+        "temp": 0.9,
+        "top_p": 0.9,
+        "top_k": 80,
+        "repeat_penalty": 1.2,
+        "tokens": 8192
+      },
+      "wall_time": 29.5,
+      "think_chars": 2211,
+      "answer_chars": 0,
+      "total_chars": 2211
+    },
+    "math": {
+      "tuned_score": 10,
+      "elements": 5,
+      "max_elements": 5,
+      "orig_score": 8,
+      "delta": 2,
+      "style": "reasoning",
+      "settings": {
+        "temp": 1.0,
+        "top_p": 0.8,
+        "top_k": 80,
+        "repeat_penalty": 1.1,
+        "tokens": 8192
+      },
+      "wall_time": 83.6,
+      "think_chars": 5765,
+      "answer_chars": 74,
+      "total_chars": 5841
+    },
+    "html": {
+      "tuned_score": 10,
+      "elements": 7,
+      "max_elements": 7,
+      "orig_score": 7,
+      "delta": 3,
+      "style": "reasoning",
+      "settings": {
+        "temp": 1.0,
+        "top_p": 0.8,
+        "top_k": 80,
+        "repeat_penalty": 1.1,
+        "tokens": 8192
+      },
+      "wall_time": 237.3,
+      "think_chars": 1502,
+      "answer_chars": 16450,
+      "total_chars": 17953
+    },
+    "python": {
+      "tuned_score": 9,
+      "elements": 6,
+      "max_elements": 7,
+      "orig_score": 8,
+      "delta": 1,
+      "style": "reasoning",
+      "settings": {
+        "temp": 1.0,
+        "top_p": 0.8,
+        "top_k": 80,
+        "repeat_penalty": 1.1,
+        "tokens": 8192
+      },
+      "wall_time": 173.3,
+      "think_chars": 588,
+      "answer_chars": 15137,
+      "total_chars": 15726
+    },
+    "c": {
+      "tuned_score": 10,
+      "elements": 7,
+      "max_elements": 7,
+      "orig_score": 8,
+      "delta": 2,
+      "style": "reasoning",
+      "settings": {
+        "temp": 1.0,
+        "top_p": 0.8,
+        "top_k": 80,
+        "repeat_penalty": 1.1,
+        "tokens": 8192
+      },
+      "wall_time": 60.4,
+      "think_chars": 999,
+      "answer_chars": 3693,
+      "total_chars": 4693
+    },
+    "basic": {
+      "tuned_score": 9,
+      "elements": 6,
+      "max_elements": 7,
+      "orig_score": 4,
+      "delta": 5,
+      "style": "code",
+      "settings": {
+        "temp": 0.7,
+        "top_p": 1.0,
+        "top_k": 40,
+        "repeat_penalty": 1.2,
+        "tokens": 8192
+      },
+      "wall_time": 422.4,
+      "think_chars": 28928,
+      "answer_chars": 0,
+      "total_chars": 28928
+    },
+    "julia": {
+      "tuned_score": 10,
+      "elements": 7,
+      "max_elements": 7,
+      "orig_score": 7,
+      "delta": 3,
+      "style": "reasoning",
+      "settings": {
+        "temp": 1.0,
+        "top_p": 0.8,
+        "top_k": 80,
+        "repeat_penalty": 1.1,
+        "tokens": 8192
+      },
+      "wall_time": 186.4,
+      "think_chars": 3120,
+      "answer_chars": 10939,
+      "total_chars": 14060
+    }
+  }
+}

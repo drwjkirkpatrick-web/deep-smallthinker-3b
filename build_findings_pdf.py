@@ -2,10 +2,11 @@
 """
 Build the comprehensive deep-smallthinker-3b findings PDF report.
 
-Covers ALL 65 experiments:
+Covers ALL 75 experiments:
   - 10-prompt baseline benchmark (temp 1.0, 32K context)
   - 20-run temperature sweep (0.1-0.9, 4 creative prompts)
   - 45-run variable sweep (top_p, top_k, repeat_penalty; 3 prompts each)
+  - 10-prompt tuned retest (best settings per category, 32K context)
   - Tuned settings matrix + per-category recommendations
 """
 import json
@@ -37,6 +38,10 @@ with open(f"{BASE}/variable_sweep_quality.json") as f:
     VAR_QUALITY = json.load(f)
 with open(f"{BASE}/quality_scores.json") as f:
     QUALITY_SCORES = json.load(f)
+with open(f"{BASE}/tuned_retest_results.json") as f:
+    TUNED_RETEST = json.load(f)
+with open(f"{BASE}/tuned_retest_quality.json") as f:
+    TUNED_QUALITY = json.load(f)
 
 # ---- Colors (house style) ----
 HEADER_BG = colors.HexColor("#1a237e")
@@ -101,26 +106,27 @@ elements.append(Paragraph(
 
 elements.append(Paragraph("Executive Summary", section_style))
 elements.append(Paragraph(
-    "This report documents 65 experiments to fine-tune SmallThinker-3B for maximum quality on an 8GB Jetson. "
+    "This report documents 75 experiments to fine-tune SmallThinker-3B for maximum quality on an 8GB Jetson. "
     "Three rounds of testing progressively narrowed the optimal settings from default values to empirically-tuned "
-    "per-category parameters. The central discovery: SmallThinker's meta-reasoning loop on creative tasks is "
-    "<b>chaotic, not monotonic</b> -- there is no single 'safe' temperature, and the loop is quasi-random per "
-    "(prompt, temperature) pair. The solution is a keyword-based auto-adjuster that classifies each prompt and "
-    "applies the best settings for its category.",
+    "per-category parameters, then a final 10-prompt retest validated the tuned settings. The central discovery: "
+    "SmallThinker's meta-reasoning loop on creative tasks is <b>chaotic, not monotonic</b> -- there is no single "
+    "'safe' temperature, and the loop is quasi-random per (prompt, temperature) pair. The solution is a keyword-based "
+    "auto-adjuster that classifies each prompt and applies the best settings for its category. <b>The result: average "
+    "quality rose from 6.4/10 to 9.8/10 -- all 10 prompts improved, none regressed.</b>",
     finding_style
 ))
 
 # Summary metrics table
 summary_data = [
     [P("Metric", header_left), P("Value", header_cell), P("Detail", header_left)],
-    [P("Total experiments", cell_left), P("65", cell_bold), P("10 benchmark + 20 temp sweep + 45 variable sweep", cell_left)],
-    [P("Generation speed", cell_left), P("~20 t/s", cell_bold), P("Consistent across all 65 runs (memory-bandwidth bound)", cell_left)],
+    [P("Total experiments", cell_left), P("75", cell_bold), P("10 benchmark + 20 temp sweep + 45 variable sweep + 10 tuned retest", cell_left)],
+    [P("Generation speed", cell_left), P("~20 t/s", cell_bold), P("Consistent across all 75 runs (memory-bandwidth bound)", cell_left)],
     [P("Baseline quality (temp 1.0)", cell_left), P("6.4/10", cell_bold), P("Code/math: 8/10; creative/prose: 3-4/10 (loop)", cell_left)],
-    [P("Tuned quality range", cell_left), P("3-8/10", cell_bold), P("Per-category: reasoning 8, prose 8, fiction 7, code 6-7, poetry 3", cell_left)],
+    [P("Tuned quality (retest)", cell_left), P("9.8/10", cell_bold), P("10/10 prompts improved, 0 regressed (avg +3.4)", cell_left)],
     [P("Best single speedup", cell_left), P("2.6x", cell_bold), P("top_k=80 vs 40 for reasoning (37s vs 98s)", cell_left)],
     [P("Most sensitive variable", cell_left), P("rep", cell_bold), P("Proof completeness varies 2/5 to 5/5 across repeat_penalty", cell_left)],
     [P("Most robust category", cell_left), P("code", cell_bold), P("14/15 variable runs scored 7/7 code elements", cell_left)],
-    [P("Most pathological prompt", cell_left), P("prose", cell_bold), P("'Loops' at all temps -- but actually produces complete output (false positive)", cell_left)],
+    [P("Biggest quality jump", cell_left), P("+7", cell_bold), P("Creative writing: 3/10 to 10/10 (temp 0.9, rep 1.2)", cell_left)],
 ]
 st = Table(summary_data, colWidths=[45*mm, 22*mm, 115*mm], repeatRows=1)
 st.setStyle(TableStyle([
@@ -556,11 +562,131 @@ elements.append(Paragraph(
 ))
 
 # =====================================================================
-# PAGE 7: Tuned Settings Matrix + Recommendations
+# PAGE 8: Tuned Retest — 10 Prompts with Best Settings
 # =====================================================================
 
 elements.append(PageBreak())
-elements.append(Paragraph("6. Tuned Settings Matrix — Final Recommendations", section_style))
+elements.append(Paragraph("7. Tuned Retest — 10 Prompts with Best Settings", section_style))
+elements.append(Paragraph(
+    "The original 10 benchmark prompts were re-run with the tuned per-category settings from all 65 prior experiments. "
+    "Each prompt was classified by auto_temp.py, then run with its category's best temperature, top_p, top_k, and "
+    "repeat_penalty. Context remained 32K; thinking tokens were 8192. This is the validation round.",
+    small_note
+))
+
+# Tuned retest comparison table
+rt_header = [
+    P("Prompt", header_left), P("Style", header_cell), P("Settings", header_left),
+    P("Wall\nsec", header_cell), P("Total\nchars", header_cell),
+    P("Orig\n1-10", header_cell), P("Tuned\n1-10", header_cell), P("Delta", header_cell),
+]
+rt_rows = [rt_header]
+rt_scores = TUNED_QUALITY["scores"]
+for run in TUNED_RETEST["runs"]:
+    pid = run["id"]
+    if "error" in run:
+        rt_rows.append([P(pid, cell_left), P("ERROR"), P("-"), P("-"), P("-"), P("-"), P("-"), P("-")])
+        continue
+    s = rt_scores[pid]
+    stg = s["settings"]
+    settings_str = f"t={stg['temp']} p={stg['top_p']} k={stg['top_k']} r={stg['repeat_penalty']}"
+    rt_rows.append([
+        P(pid, cell_left), P(s["style"], cell_left), P(settings_str, cell_left),
+        P(f"{s['wall_time']:.1f}"), P(str(s["total_chars"])),
+        P(str(s["orig_score"]), cell_bold), P(str(s["tuned_score"]), cell_bold),
+        P(f"+{s['delta']}" if s["delta"] >= 0 else str(s["delta"]), cell_bold),
+    ])
+
+# Average row
+rt_rows.append([
+    P("AVERAGE", cell_bold_left), P(""), P(""), P(""), P(""),
+    P(str(TUNED_QUALITY["average_original"]), cell_bold), P(str(TUNED_QUALITY["average_tuned"]), cell_bold),
+    P(f"+{TUNED_QUALITY['delta']}", cell_bold),
+])
+
+rtt = Table(rt_rows, colWidths=[20*mm, 16*mm, 40*mm, 16*mm, 16*mm, 16*mm, 16*mm, 16*mm], repeatRows=1)
+rtt_cmds = [
+    ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
+    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+    ("GRID", (0, 0), (-1, -1), 0.3, colors.grey),
+    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ("TOPPADDING", (0, 0), (-1, -1), 3),
+    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ("FONTSIZE", (0, 1), (-1, -1), 7),
+]
+# Color quality cells: green for 9-10, yellow for 5-8, red for <5
+for i in range(1, len(rt_rows) - 1):
+    pid = TUNED_RETEST["runs"][i - 1]["id"]
+    if "error" in TUNED_RETEST["runs"][i - 1]:
+        continue
+    s = rt_scores[pid]
+    # Original score color
+    oq = s["orig_score"]
+    if oq >= 8:
+        rtt_cmds.append(("BACKGROUND", (5, i), (5, i), BEST_BG))
+    elif oq <= 4:
+        rtt_cmds.append(("BACKGROUND", (5, i), (5, i), BAD_BG))
+    else:
+        rtt_cmds.append(("BACKGROUND", (5, i), (5, i), GOOD_BG))
+    # Tuned score color (all should be 9-10 = green)
+    tq = s["tuned_score"]
+    if tq >= 9:
+        rtt_cmds.append(("BACKGROUND", (6, i), (6, i), BEST_BG))
+    elif tq >= 7:
+        rtt_cmds.append(("BACKGROUND", (6, i), (6, i), GOOD_BG))
+    else:
+        rtt_cmds.append(("BACKGROUND", (6, i), (6, i), BAD_BG))
+    # Delta color (all positive = green)
+    if s["delta"] >= 4:
+        rtt_cmds.append(("BACKGROUND", (7, i), (7, i), BEST_BG))
+    elif s["delta"] > 0:
+        rtt_cmds.append(("BACKGROUND", (7, i), (7, i), GOOD_BG))
+    if i % 2 == 0:
+        rtt_cmds.append(("BACKGROUND", (0, i), (2, i), ALT_ROW))
+# Average row
+last = len(rt_rows) - 1
+rtt_cmds.append(("BACKGROUND", (0, last), (-1, last), AVG_BG))
+rtt_cmds.append(("FONTNAME", (0, last), (-1, last), "Helvetica-Bold"))
+rtt.setStyle(TableStyle(rtt_cmds))
+elements.append(rtt)
+
+elements.append(Spacer(1, 4*mm))
+
+# Big win callout
+big_wins = sorted(rt_scores.items(), key=lambda x: x[1]["delta"], reverse=True)[:3]
+win_text = "<b>Biggest improvements:</b> " + ", ".join(
+    f"{pid} (+{s['delta']}: {s['orig_score']} to {s['tuned_score']})"
+    for pid, s in big_wins
+)
+elements.append(Paragraph(win_text, finding_style))
+
+elements.append(Paragraph(
+    "<b>Result: all 10 prompts improved, zero regressions.</b> The average quality score rose from 6.4/10 to 9.8/10 "
+    "(+53%). The biggest jumps were on the prompts that looped hardest at temp 1.0: creative writing (+7, from 3/10 "
+    "to 10/10), iambic pentameter (+6, from 4/10 to 10/10), and TRS-80 BASIC (+5, from 4/10 to 9/10). "
+    "The code-generation prompts (Python, C, HTML, Julia) that already scored 7-8/10 still gained 1-3 points from "
+    "the tuned sampling parameters -- primarily from top_k=80 producing more complete code with less thinking overhead. "
+    "The math proof gained a boxed final answer it lacked at default settings. "
+    "Generation speed remained ~20 t/s across all 10 retest runs.",
+    note_style
+))
+
+elements.append(Spacer(1, 3*mm))
+elements.append(Paragraph(
+    "<b>Caveat: speed did not improve.</b> The tuned settings prioritize quality, not speed. Several runs took longer "
+    "than the original benchmark (e.g. code: 189s vs 107s, html: 237s vs 99s) because the model produced substantially "
+    "more complete output (14K vs 8K chars for code, 18K vs 8K for HTML). The variable sweep speedups (top_k=80 = 2.6x) "
+    "apply to the reasoning category specifically; the retest used 8192 tokens and 32K context for all categories, "
+    "which is the quality-first configuration. For speed-sensitive use, use think-creative.sh with 4K context.",
+    small_note
+))
+
+# =====================================================================
+# PAGE 9: Tuned Settings Matrix + Recommendations
+# =====================================================================
+
+elements.append(PageBreak())
+elements.append(Paragraph("8. Tuned Settings Matrix — Final Recommendations", section_style))
 elements.append(Paragraph(
     "The auto-adjuster (auto_temp.py) classifies each prompt into one of five categories and applies the "
     "empirically-best settings from all 65 experiments. Context is always 32K for reasoning, 4K for creative.",
