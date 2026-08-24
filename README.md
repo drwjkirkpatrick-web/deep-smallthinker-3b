@@ -2,7 +2,7 @@
 
 A single-command way to run [SmallThinker-3B](https://huggingface.co/PowerInfer/SmallThinker-3B-Preview) — a small AI model that "thinks out loud" before it answers — on an 8GB Jetson. You ask one question, it shows you its full chain of thought, then gives you the answer. No setup between questions, no interactive loop, just ask-and-answer.
 
-This project includes something most don't: an **automatic settings adjuster** that reads your prompt and picks the best temperature *and sampling parameters* for it. We ran 65 experiments total (a 20-run temperature sweep + a 45-run variable sweep) to find what works, and the launchers use those findings automatically.
+This project includes something most don't: an **automatic settings adjuster** that reads your prompt and picks the best temperature *and sampling parameters* for it. We ran **75 experiments total** — a 10-prompt benchmark, a 20-run temperature sweep, a 45-run variable sweep, and a final 10-prompt retest with the tuned settings. The result: **average quality rose from 6.4/10 to 9.8/10. All 10 prompts improved, zero regressions.**
 
 ---
 
@@ -12,7 +12,7 @@ It's a 3.4-billion-parameter AI model built on Qwen2.5-3B. Unlike a regular chat
 
 **What it's good at:** math proofs, coding problems, logic puzzles, step-by-step reasoning — tasks where you can check whether the answer is right.
 
-**What it struggles with:** creative writing, poetry, open-ended prose — tasks where the "thinking" part can spiral into an endless loop of "I need to write X... first I should... let me think..." and never actually produce the thing you asked for. We discovered this the hard way and built the temperature adjuster to fix it.
+**What it struggles with:** creative writing, poetry, open-ended prose — tasks where the "thinking" part can spiral into an endless loop of "I need to write X... first I should... let me think..." and never actually produce the thing you asked for. We discovered this the hard way and built the auto-adjuster to fix it.
 
 ---
 
@@ -86,7 +86,7 @@ That's it. The auto-adjuster reads your prompt, figures out what kind of questio
   context:   32768
   tokens:    16384
   top_p:     0.80  |  top_k: 80  |  repeat: 1.10
-  [tuned via 45-run variable sweep]
+  [tuned via 75-experiment sweep, validated 9.8/10]
 =================================
 
 <thousands of words of chain-of-thought reasoning>
@@ -98,7 +98,7 @@ The ball costs $0.05.
 
 ### What the auto-adjuster does
 
-It classifies your prompt into one of five categories and uses the best temperature + sampling parameters we found for each through 65 experiments:
+It classifies your prompt into one of five categories and uses the best temperature + sampling parameters we found through 75 experiments — then validated with a final 10-prompt retest:
 
 | Your prompt asks for... | Auto-detected as... | Temp | top_p | top_k | rep | Why |
 |-------------------------|---------------------|------|-------|-------|-----|-----|
@@ -108,11 +108,12 @@ It classifies your prompt into one of five categories and uses the best temperat
 | An explanation or description | prose | 0.5 | 0.90 | 80 | 1.20 | Prose is robust everywhere; these settings are fast and clean |
 | A game, retro code, interactive | code | 0.7 | 1.00 | 40 | 1.20 | top_k=40 for code (80 over-generates); rep=1.20 is 2.6x faster with same quality |
 
-> **How did we find these numbers?** Two rounds of experiments:
-> 1. **Temperature sweep** (20 runs): 4 prompt types x 5 temperatures (0.1-0.9), only temperature changed
-> 2. **Variable sweep** (45 runs): 3 prompts x 5 values x 3 variables (top_p, top_k, repeat_penalty), only one variable changed per sweep, 32K context fixed
+> **How did we find these numbers?** Three rounds of experiments, plus a validation retest:
+> 1. **Temperature sweep** (20 runs): 4 prompt types × 5 temperatures (0.1–0.9), only temperature changed
+> 2. **Variable sweep** (45 runs): 3 prompts × 5 values × 3 variables (top_p, top_k, repeat_penalty), only one variable changed per sweep, 32K context fixed
+> 3. **Tuned retest** (10 runs): all 10 original benchmark prompts re-run with their category's best settings — quality rose from 6.4/10 to 9.8/10
 >
-> Full data: `results/temp_sweep_quality.json` and `results/variable_sweep_quality.json`.
+> Full data: `results/temp_sweep_quality.json`, `results/variable_sweep_quality.json`, and `results/tuned_retest_quality.json`.
 
 ### The manual way — if you want control
 
@@ -161,7 +162,7 @@ SmallThinker has a quirk: on open-ended creative tasks, it can fall into a **met
 
 ...and it does this for the entire 8,000-token budget, never writing the actual scene. This happens at *most* temperatures, and it's **not predictable** — the same prompt at temp 0.3 might work while temp 0.5 loops, and temp 0.9 might be the best for one creative task but the worst for another.
 
-We fixed this in two rounds:
+We fixed this in three rounds:
 
 **Round 1 — Temperature sweep** (20 runs): Tested 4 creative prompt types at 5 temperatures (0.1, 0.3, 0.5, 0.7, 0.9), changing only temperature. Found the best temp per task type: fiction 0.9, prose 0.5, poetry 0.3, code 0.7.
 
@@ -173,6 +174,26 @@ We fixed this in two rounds:
 - **Coding quality is robust** — 14/15 runs scored 7/7 code elements. Only top_k=60 missed docstrings. Coding doesn't need fine-tuning.
 - **Creative quality is robust** — all 15 runs scored 5/5 scene elements. The differentiator is speed, not quality.
 - **Reasoning is the most sensitive** — proof completeness varies 2/5 to 5/5 depending on repeat_penalty. This is the variable that matters most for math/logic.
+
+**Round 3 — Tuned retest** (10 runs): All 10 original benchmark prompts re-run with their category's best settings from rounds 1 and 2. This is the validation round — and every prompt improved:
+
+| Prompt | Type | Original score | Tuned score | Improvement |
+|--------|------|---------------|-------------|-------------|
+| creative writing | fiction | 3/10 | 10/10 | **+7** |
+| iambic pentameter | poetry | 4/10 | 10/10 | **+6** |
+| TRS-80 BASIC | code | 4/10 | 9/10 | **+5** |
+| prose (medical) | prose | 7/10 | 10/10 | +3 |
+| HTML page | reasoning | 7/10 | 10/10 | +3 |
+| Julia code | reasoning | 7/10 | 10/10 | +3 |
+| math proof | reasoning | 8/10 | 10/10 | +2 |
+| C program | reasoning | 8/10 | 10/10 | +2 |
+| Python function | reasoning | 8/10 | 9/10 | +1 |
+| merge sort | reasoning | 8/10 | 10/10 | +2 |
+| **Average** | | **6.4/10** | **9.8/10** | **+3.4** |
+
+The biggest jumps were on the prompts that looped hardest at temp 1.0: creative writing went from 3/10 to 10/10, iambic pentameter from 4/10 to 10/10, and TRS-80 BASIC from 4/10 to 9/10. The code-generation prompts that already scored 7–8/10 still gained 1–3 points from the tuned sampling parameters — primarily from top_k=80 producing more complete code with less thinking overhead.
+
+> **Speed note:** The tuned settings prioritize quality, not speed. Several retest runs took longer than the original benchmark because the model produced substantially more complete output (14K vs 8K chars for code, 18K vs 8K for HTML). For speed-sensitive use, use `think-creative.sh` with 4K context.
 
 The `auto_temp.py` classifier reads your prompt, matches it against keyword patterns for each category, and outputs the winning temperature + context + token budget. `think-auto.sh` then maps the style to the tuned top_p/top_k/repeat_penalty from the variable sweep.
 
@@ -245,22 +266,24 @@ echo "your question" | ./think-auto.sh
 
 ## Benchmarks
 
-We benchmarked this model with the same 10-prompt suite from our prior LLM benchmark projects (5 general + 5 coding). The key findings:
+We benchmarked this model with the same 10-prompt suite from our prior LLM benchmark projects (5 general + 5 coding). Here's what 75 experiments told us:
 
-**Speed**: A consistent 20.0 tokens/second generation across all prompts. Prompt evaluation averages 409 t/s.
+**Speed**: A consistent 20.0 tokens/second generation across all 75 runs. Prompt evaluation averages 409 t/s. The Jetson is memory-bandwidth bound, not compute bound — sampling parameters don't change the speed.
 
-**Quality at temp 1.0 (deep thinking)**: Average 6.4/10 — identical to the earlier temp-0.3 run. Deep thinking doesn't raise the average; it shifts where quality lands. Verifiable tasks (code, math, proofs) scored 7–8/10. Open-ended creative tasks collapsed to 3–4/10 due to the meta-reasoning loop.
+**Round 1 — Baseline (10 prompts, temp 1.0)**: Average 6.4/10. Verifiable tasks (code, math, proofs) scored 7–8/10. Open-ended creative tasks collapsed to 3–4/10 due to the meta-reasoning loop. Deep thinking doesn't raise the average — it shifts where quality lands.
 
-**Temperature sweep**: A 20-run sweep (temp 0.1–0.9, only temperature varied) found the loop is chaotic, not monotonic. Best temperature is prompt-dependent. Creative fiction works best at 0.9, prose is robust everywhere, poetry is weak at all temperatures, creative code works best at 0.7.
+**Round 2 — Temperature sweep (20 runs)**: Tested temps 0.1–0.9 on the 4 prompts that looped at temp 1.0. The loop is chaotic, not monotonic — best temperature is prompt-dependent. Fiction works best at 0.9, prose is robust everywhere, poetry is weak at all temperatures, creative code works best at 0.7.
 
-**Variable sweep**: A 45-run sweep (top_p, top_k, repeat_penalty at 5 values each, 3 prompts, only one variable changed at a time, 32K context fixed) found the biggest wins in speed, not quality:
+**Round 3 — Variable sweep (45 runs)**: Tested top_p, top_k, and repeat_penalty at 5 values each across 3 representative prompts, one variable at a time, 32K context fixed. Biggest wins in speed, not quality:
 - top_k=80 makes reasoning 2.6x faster than the common default of 40 (37s vs 98s)
 - repeat_penalty=1.10 is the only value that produces complete mathematical proofs (5/5 proof elements)
 - repeat_penalty=1.20 makes creative and coding 2.6x faster with identical quality scores
 - Coding and creative quality are robust across all values (7/7 code elements, 5/5 scene elements)
 - Reasoning is the most sensitive variable — proof completeness varies from 2/5 to 5/5
 
-Full benchmark data: `results/benchmark_results.json`, `results/temp_sweep_quality.json`, `results/variable_sweep_quality.json`, and `Deep_SmallThinker_3B_Benchmark_Report.pdf`.
+**Round 4 — Tuned retest (10 runs)**: All 10 original prompts re-run with their category's best settings. **Average quality rose from 6.4/10 to 9.8/10 (+53%). All 10 prompts improved, zero regressions.** The biggest jumps were on the prompts that looped hardest: creative writing (+7), iambic pentameter (+6), TRS-80 BASIC (+5).
+
+Full data: `results/benchmark_results.json`, `results/temp_sweep_quality.json`, `results/variable_sweep_quality.json`, `results/tuned_retest_quality.json`, and `Deep_SmallThinker_3B_Findings_Report.pdf` (8-page report covering all 75 experiments).
 
 ---
 
@@ -273,12 +296,15 @@ deep-smallthinker-3b/
 ├── think-creative.sh           # creative launcher (tuned per --style)
 ├── auto_temp.py                # the prompt classifier
 ├── benchmark.py                # 10-prompt benchmark suite
+├── tuned_retest.py             # 10-prompt retest with tuned settings
 ├── temp_sweep.py               # temperature sweep (20 runs)
 ├── variable_sweep.py           # variable sweep (45 runs)
 ├── score_quality.py            # metrics + quality scoring
 ├── render_report.py            # merges metrics + scores
-├── build_report_pdf.py         # renders the PDF report
+├── build_report_pdf.py         # renders the benchmark PDF report
+├── build_findings_pdf.py       # renders the full 75-experiment findings PDF
 ├── Deep_SmallThinker_3B_Benchmark_Report.pdf
+├── Deep_SmallThinker_3B_Findings_Report.pdf   # 8-page report, all 75 experiments
 ├── scripts/
 │   └── download-model.sh       # fetches the Q4_K_M model
 ├── prompts/
@@ -292,12 +318,14 @@ deep-smallthinker-3b/
 ## Re-running the benchmarks
 
 ```bash
-python3 benchmark.py        # ~15 min, 10 prompts at temp 1.0
+python3 benchmark.py        # ~15 min, 10 prompts at temp 1.0 (baseline)
 python3 temp_sweep.py       # ~30 min, 20 runs at temps 0.1–0.9
 python3 variable_sweep.py  # ~45 min, 45 runs (top_p, top_k, repeat_penalty)
+python3 tuned_retest.py     # ~30 min, 10 prompts with tuned settings (validation)
 python3 score_quality.py    # print metrics summary
 python3 render_report.py    # merge metrics + quality scores
-python3 build_report_pdf.py # render the PDF report
+python3 build_report_pdf.py # render the benchmark PDF report
+python3 build_findings_pdf.py # render the full 75-experiment findings PDF
 ```
 
 ---
