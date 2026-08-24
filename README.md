@@ -1,228 +1,276 @@
 # deep-smallthinker-3b
 
-Single-turn deep reasoning with [SmallThinker-3B](https://huggingface.co/PowerInfer/SmallThinker-3B-Preview) on an 8GB Jetson (Orin Nano). One command, tuned for **maximum thinking depth**: an excess of thinking tokens, a high temperature (we have free tokens, so we let it explore), and a context window sized for GUI-off operation.
+A single-command way to run [SmallThinker-3B](https://huggingface.co/PowerInfer/SmallThinker-3B-Preview) — a small AI model that "thinks out loud" before it answers — on an 8GB Jetson. You ask one question, it shows you its full chain of thought, then gives you the answer. No setup between questions, no interactive loop, just ask-and-answer.
 
-## What this is
+This project includes something most don't: an **automatic temperature adjuster** that reads your prompt and picks the best settings for it. We tested 20 different temperature-and-prompt combinations to find what works, and the launcher uses those findings automatically.
 
-SmallThinker-3B is a 3.4B-parameter reasoning model (Qwen2.5-3B base) that emits a full chain-of-thought before answering. The problem with running it naively is threefold:
+---
 
-1. **It gets stuck without `--jinja`** — the chat template isn't applied, so it loops forever on internal `<think>` tokens (~49 tokens) and never produces an answer.
-2. **Its thinking gets truncated** — default token budgets are far too small to let it reason.
-3. **Its default sampling is too conservative** — with time and tokens not being a constraint on this Jetson, a low temperature wastes the model's ability to explore.
+## What is SmallThinker-3B?
 
-This project fixes all three with a single, documented launch script.
+It's a 3.4-billion-parameter AI model built on Qwen2.5-3B. Unlike a regular chatbot that answers immediately, SmallThinker writes out its reasoning first — sometimes thousands of words of "let me consider..." and "if X then Y..." before it arrives at a conclusion. Think of it as a model that shows its work on every question.
 
-## Prerequisites
+**What it's good at:** math proofs, coding problems, logic puzzles, step-by-step reasoning — tasks where you can check whether the answer is right.
 
-- Jetson Orin Nano 8GB (JetPack 6, L4T R36.5.x) — or any aarch64/ARM64 box with ≥8GB unified memory
-- llama.cpp built with CUDA (see [jetson-llamacpp-benchmarks](https://github.com/drwjkirkpatrick-web/jetson-llamacpp-benchmarks) for the exact CMake flags)
-- The Q4_K_M GGUF (~2.0 GB)
+**What it struggles with:** creative writing, poetry, open-ended prose — tasks where the "thinking" part can spiral into an endless loop of "I need to write X... first I should... let me think..." and never actually produce the thing you asked for. We discovered this the hard way and built the temperature adjuster to fix it.
+
+---
+
+## Step 1: Build llama.cpp
+
+You need llama.cpp compiled with CUDA support. This is the engine that runs the model.
 
 ```bash
-# Build llama.cpp once
-git clone https://github.com/ggml-org/llama.cpp && cd llama.cpp
+git clone https://github.com/ggml-org/llama.cpp
+cd llama.cpp
 cmake -B build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES="87" \
-  -DGGML_CUDA_F16=ON -DGGML_CUDA_FA=ON -DGGML_CUDA_GRAPHS=ON -DCMAKE_BUILD_TYPE=Release
+  -DGGML_CUDA_F16=ON -DGGML_CUDA_FA=ON -DGGML_CUDA_GRAPHS=ON \
+  -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release -j $(nproc)
+```
 
-# Download the model (into ~/models/)
+This takes about 10 minutes. When it's done, you'll have `llama.cpp/build/bin/llama-cli`.
+
+> Already built llama.cpp on your Jetson? Skip this step — the scripts default to `~/llama.cpp/build/bin/llama-cli`.
+
+---
+
+## Step 2: Download the model
+
+The model file is about 2 GB. We use the Q4_K_M quantization (compressed format) because it's small enough to fit in the Jetson's 8 GB of memory while leaving room for a large context window.
+
+```bash
+cd ~/projects/deep-smallthinker-3b
 ./scripts/download-model.sh
 ```
 
-## Quick start
+This downloads `smallthinker-3b-q4_k_m.gguf` to `~/models/`. It takes 5–10 minutes depending on your connection.
+
+> **Why Q4_K_M instead of Q8_0?** The Q8_0 version is 3.4 GB and runs at 19.2 tokens/second. The Q4_K_M is 2.1 GB and runs at 20.0 tokens/second. The smaller size frees ~1.3 GB of RAM, which is exactly what we need to open up a larger context window (32K tokens) for deep thinking. Quality is nearly identical on the tasks this model is good at.
+
+---
+
+## Step 3: Turn off the GUI (recommended)
+
+The Jetson shares its 8 GB between the GPU and the desktop interface. Stopping the desktop frees about 600 MB, which lets us use the full 32K context window.
 
 ```bash
-# Stop the GUI to free ~600 MB (optional but recommended for the big contexts)
 sudo systemctl stop gdm3
-
-# Ask a question — single turn, deep thinking, then exit
-./think.sh "A bat and a ball cost $1.10. The bat costs $1 more than the ball. How much is the ball?"
 ```
 
-Outputs the full chain-of-thought, then the boxed final answer, then a speed summary:
+Your screen will go black — that's normal. You can still SSH in or use a terminal (Ctrl+Alt+F2). To turn the GUI back on later:
+
+```bash
+sudo systemctl start gdm3
 ```
-[ Prompt: 279.1 t/s | Generation: 19.2 t/s ]
-Exiting...
+
+> **Can't or don't want to stop the GUI?** The scripts still work — they just use a smaller context window (8K instead of 32K). The model will still think, just not as deeply on very long problems.
+
+---
+
+## Step 4: Ask a question
+
+### The easy way — automatic temperature
+
+```bash
+./think-auto.sh "A bat and a ball cost $1.10 total. The bat costs $1 more than the ball. How much does the ball cost?"
 ```
 
-## GUI modes
+That's it. The auto-adjuster reads your prompt, figures out what kind of question it is, and picks the best temperature for it. You'll see:
 
-The context window and thinking budget scale with how much RAM you free:
+```
+== think-auto.sh (auto temperature) ==
+  prompt:    A bat and a ball cost $1.10 total. The bat costs $1 more...
+  style:     reasoning
+  temp:      1.0  ← auto-selected
+  context:   32768
+  tokens:    16384
+========================================
 
-| Mode | Command | Context | Thinking tokens | Est. runtime | Notes |
-|------|---------|---------|-----------------|--------------|-------|
-| `max` (default) | `./think.sh "..."` | **32768** | **16384** | ~3.6 GB | Native 32K; GUI MUST be off |
-| `off` | `GUI_MODE=off ./think.sh "..."` | **16384** | **8192** | ~3.0 GB | GUI off, lighter RAM |
-| `on` | `GUI_MODE=on ./think.sh "..."` | 8192 | 4096 | ~2.7 GB | GUI still running |
+<thousands of words of chain-of-thought reasoning>
 
-Memory math (measured on this Jetson, 7.4 GiB usable):
-- GUI on → ~4.1 GB free · GUI off → ~4.7 GB free
-- Q4_K_M weights: ~2.0 GB
-- KV cache (Qwen2.5-3B, f16): ~36 KB/token → 302 MB @ 8K, 604 MB @ 16K, 1.2 GB @ 32K
-- CUDA context overhead: ~400 MB
+The ball costs $0.05.
 
-## Settings and rationale
+[ Prompt: 279.1 t/s | Generation: 20.0 t/s ]
+```
 
-### Excess thinking tokens (`-n`)
-SmallThinker was trained to emit 8K+ token reasoning chains (the QwQ-LongCoT-500K dataset is >75% samples with >8K output tokens). Default `-n` values truncate this. This project defaults to **16384** thinking tokens (the `max` mode) so the model can reason as long as it wants on a single turn.
+### What the auto-adjuster does
 
-### High temperature (`--temp 1.0`)
-The standard advice for reasoning models is a low temperature (0.3–0.6) for determinism. That advice assumes you're paying per token and want one correct answer fast. On this Jetson **tokens are free and time is not a factor**, so we flip it: `--temp 1.0` (the paper's own generation setting) lets the model explore the reasoning tree and re-derive. If you need precision on a math/code problem, override with `TEMP=0.6 ./think.sh "..."`.
+It classifies your prompt into one of five categories and uses the best temperature we found for each:
 
-### Context (`-c`)
-Defaults to the model's **native 32K (32768)** context in `max` mode — a short prompt plus up to 16K of thinking fits comfortably with the GUI stopped. `off` mode drops to 16K, `on` mode to 8K for lighter RAM.
+| Your prompt asks for... | Auto-detected as... | Temperature | Why |
+|-------------------------|---------------------|-------------|-----|
+| Math, proofs, algorithms, logic | reasoning | 1.0 | High temp lets it explore the reasoning tree — and since there's a checkable answer, exploration helps |
+| A story, scene, or narrative | fiction | 0.9 | The only temperature where the model commits to actual prose instead of planning forever |
+| A poem, sonnet, or verse | poetry | 0.3 | Lower temp keeps the model from spiraling (though poetry is its weakest skill) |
+| An explanation or description | prose | 0.5 | Prose is robust at any temperature; 0.5 is the sweet spot for thoroughness |
+| A game, retro code, or interactive program | code | 0.7 | Closest to correct output for creative/structured code |
 
-### Single turn (`-st` / `--single-turn`)
-`-st` runs exactly one turn then exits — no interactive REPL, no 260 MB of `>` prompts, no hanging stdin. Combined with `--no-conversation` it is clean and scriptable. This is the core UX: *one question in, one deep answer out*.
+> **How did we find these numbers?** We ran a 20-experiment temperature sweep — 4 prompt types × 5 temperatures (0.1, 0.3, 0.5, 0.7, 0.9) — keeping everything else fixed and changing *only* the temperature. Full data is in `results/temp_sweep_quality.json`.
 
-### The rest
-| Flag | Value | Why |
-|------|-------|-----|
-| `--jinja` | on | **Critical** — applies the chat template so the thinking model actually emits its answer (otherwise it loops on ~49 internal tokens forever) |
-| `-ngl 99` | all layers | Offload every layer to the GPU (tensor cores for all matmul) |
-| `-fa on` | flash attention | 6–50× faster prompt eval on the Orin's FP16 tensor cores |
-| `--top-p` / `--top-k` | 0.95 / 40 | Standard nucleus sampling; keeps reasoning on-track at temp 1.0 |
-| `--repeat-penalty` | 1.1 | Discourages the model from re-stating itself in long CoT loops |
-| `-t 6` | 6 threads | Matches the Orin's 6 CPU cores |
-| `--no-display-prompt` | — | Clean output: answer only, no prompt echo |
+### The manual way — if you want control
+
+```bash
+# Deep reasoning (max thinking, temp 1.0, 32K context)
+./think.sh "Prove that sqrt(2) is irrational."
+
+# Creative writing (temp picked per style)
+./think-creative.sh "Write a scene where a lighthouse keeper meets a stranger."
+./think-creative.sh --style poetry "Write a sonnet about the ocean."
+./think-creative.sh --style prose "Explain Hashimoto's thyroiditis."
+./think-creative.sh --style code "Write a TRS-80 BASIC game."
+```
+
+---
+
+## Step 5: Understand what you're seeing
+
+The output has two parts:
+
+1. **The thinking** — A long block of reasoning. SmallThinker was trained on the QwQ-LongCoT-500K dataset, where over 75% of examples have 8,000+ tokens of chain-of-thought. This is the model "showing its work." It may consider wrong paths, backtrack, and correct itself. That's normal — it's how reasoning models work.
+
+2. **The answer** — After the thinking block, you get the final answer, often in a box or marked clearly.
+
+3. **The speed line** — At the very end: `[ Prompt: 279 t/s | Generation: 20 t/s ]`. Prompt speed is how fast it read your question. Generation speed is how fast it wrote the answer. On this Jetson, generation is consistently ~20 tokens/second (about 15 words/second).
+
+> **Important:** SmallThinker is a 3B model — its reasoning is a *draft*, not a guarantee. It got "strawberry has 3 r's" right at temp 1.0, but the Q8_0 version got it wrong at temp 0.6. Always sanity-check its answer against your own judgment.
+
+---
+
+## The three launchers
+
+| Script | When to use | Temperature | Context | Tokens |
+|--------|-------------|-------------|---------|--------|
+| `think-auto.sh` | Default — let it auto-adjust | Auto (0.3–1.0) | Auto | Auto |
+| `think.sh` | Deep reasoning, manual control | 1.0 (override with `TEMP=`) | 32K (max mode) | 16K |
+| `think-creative.sh` | Creative writing, manual style pick | Per style (0.3–0.9) | 4K | 1.2K |
+
+---
+
+## How the temperature adjuster works
+
+SmallThinker has a quirk: on open-ended creative tasks, it can fall into a **meta-reasoning loop**. Instead of writing the scene you asked for, it writes:
+
+> *"I need to write a scene about a lighthouse. First, I should think about the setting. Let me consider the atmosphere. I'll need a character..."*
+
+...and it does this for the entire 8,000-token budget, never writing the actual scene. This happens at *most* temperatures, and it's **not predictable** — the same prompt at temp 0.3 might work while temp 0.5 loops, and temp 0.9 might be the best for one creative task but the worst for another.
+
+Our 20-run sweep found the best temperature for each task type (see the table in Step 4). The `auto_temp.py` classifier reads your prompt, matches it against keyword patterns for each category, and outputs the winning temperature. It's a simple keyword classifier — no AI needed for the classification itself, just pattern matching.
+
+```bash
+# See what it picks for any prompt
+python3 auto_temp.py "your prompt here"
+# Output: 0.9 fiction 4096 1200
+```
+
+---
+
+## The important flags (and why they matter)
+
+### `--jinja` — without this, nothing works
+
+This is the single most important flag. SmallThinker uses a chat template that separates "thinking" from "answering." Without `--jinja`, the template isn't applied, and the model gets stuck in a loop of ~49 internal tokens — it thinks forever and never answers. **Every script in this project includes `--jinja`.**
+
+### `-st` (single-turn) — one question, one answer, then stop
+
+Without `-st`, llama-cli enters interactive mode and waits for your next question. On a headless Jetson with no stdin, this produces 260 MB of `>` prompt characters before eventually timing out. With `-st`, it answers one question and exits cleanly.
+
+### `-n 16384` — excess thinking tokens
+
+The `-n` flag caps how many tokens the model can generate. SmallThinker's training data has reasoning chains of 8K+ tokens. If you cap at the default 512 or 2048, you cut the model off mid-thought and get a truncated, wrong answer. We default to 16,384 in max mode so the model has room to think.
+
+### `--temp 1.0` — high temperature for reasoning
+
+Standard advice is "use low temperature (0.3) for accuracy." That assumes you're paying per token and want one fast answer. On this Jetson, tokens are free — so we use temp 1.0 to let the model explore multiple reasoning paths. For creative tasks, the auto-adjuster lowers it based on what works.
+
+### `-ngl 99 -fa on` — full GPU offload + flash attention
+
+`-ngl 99` puts every layer on the GPU (tensor cores do all the math). `-fa on` enables flash attention, which is 6–50× faster for prompt evaluation on the Orin's FP16 tensor cores.
+
+---
 
 ## Environment variable overrides
 
-| Var | Default | Effect |
-|-----|---------|--------|
-| `GUI_MODE` | `off` | `off` / `on` / `max` → context + token budget |
-| `CTX` | per mode | Explicit context override |
-| `N_TOKENS` | per mode | Explicit thinking-token override |
-| `TEMP` | `1.0` | Sampling temperature |
-| `TOP_P` / `TOP_K` | `0.95` / `40` | Nucleus sampling |
-| `REPEAT_PENALTY` | `1.1` | Repetition penalty |
-| `MODEL` | `~/models/smallthinker-3b-q4_k_m.gguf` | Model path |
-| `LLAMA_CLI` | `~/llama.cpp/build/bin/llama-cli` | Binary path |
+All scripts accept environment variables for manual control:
+
+| Variable | Default | What it does |
+|----------|---------|--------------|
+| `GUI_MODE` | `max` | `max` = 32K context (GUI off), `off` = 16K (GUI off), `on` = 8K (GUI on) |
+| `TEMP` | per script | Override the temperature |
+| `CTX` | per mode | Override the context window size |
+| `N_TOKENS` | per mode | Override the max output tokens |
+| `MODEL` | `~/models/smallthinker-3b-q4_k_m.gguf` | Path to the model file |
+| `LLAMA_CLI` | `~/llama.cpp/build/bin/llama-cli` | Path to the llama.cpp binary |
+
+---
 
 ## Prompt input
 
-Three ways to supply the prompt:
+All three scripts accept prompts three ways:
 
 ```bash
-./think.sh "your question"              # as an argument
-PROMPT_FILE=prompts/samples.txt ./think.sh  # from a file
-echo "your question" | ./think.sh       # piped on stdin
+# As an argument
+./think-auto.sh "your question here"
+
+# From a file
+PROMPT_FILE=prompts/samples.txt ./think-auto.sh
+
+# Piped from stdin
+echo "your question" | ./think-auto.sh
 ```
 
-## Verification
-
-```bash
-# Confirm the model loads and answers (fast smoke test)
-./think.sh "Count the r's in strawberry."
-# Expect: a chain-of-thought trace, a final boxed answer, then the speed summary.
-# (It may or may not get the count right — that is the point; see note below.)
-```
-
-> Note: "strawberry" has **3** r's. SmallThinker is a 3B model — its chain-of-thought is a *draft*, not ground truth. It scores 8/10 on math in our Jetson benchmark but only 6.4/10 overall; always sanity-check its final answer against your own reasoning.
+---
 
 ## Benchmarks
 
-The model was benchmarked against the full 10-prompt suite from our prior LLM benchmark projects (5 general + 5 coding). Full results in `Deep_SmallThinker_3B_Benchmark_Report.pdf` and `results/`.
+We benchmarked this model with the same 10-prompt suite from our prior LLM benchmark projects (5 general + 5 coding). The key findings:
 
-### Headline result
+**Speed**: A consistent 20.0 tokens/second generation across all prompts. Prompt evaluation averages 409 t/s.
 
-| Metric | Value |
-|--------|-------|
-| Average quality | **6.4/10** (identical to the earlier temp-0.3 run) |
-| Average generation speed | **20.0 tok/s** |
-| Average prompt-eval speed | **409 tok/s** |
-| Verifiable tasks (code/math/coding) | **7–8/10** |
-| Open-ended creative/prose | **3–4/10** (meta-reasoning loop) |
+**Quality at temp 1.0 (deep thinking)**: Average 6.4/10 — identical to the earlier temp-0.3 run. Deep thinking doesn't raise the average; it shifts where quality lands. Verifiable tasks (code, math, proofs) scored 7–8/10. Open-ended creative tasks collapsed to 3–4/10 due to the meta-reasoning loop.
 
-**The finding:** deep thinking (temp 1.0 + excess tokens) does *not* raise average quality — it *shifts* where quality lands. Structured tasks with a checkable answer benefit from the extra step-by-step reasoning. Open-ended creative tasks collapse: the model enters a "I need to write X… first I should… let me think…" loop and never emits the deliverable, burning the whole 8192-token budget on thinking-about-thinking.
+**Temperature sweep**: A 20-run sweep (temp 0.1–0.9, only temperature varied) found the loop is chaotic, not monotonic. Best temperature is prompt-dependent. Creative fiction works best at 0.9, prose is robust everywhere, poetry is weak at all temperatures, creative code works best at 0.7.
 
-### Re-running the benchmark
+Full benchmark data: `results/benchmark_results.json`, `results/temp_sweep_quality.json`, and `Deep_SmallThinker_3B_Benchmark_Report.pdf`.
 
-```bash
-python3 benchmark.py        # ~15 min, writes results/benchmark_results.json
-python3 score_quality.py    # metrics summary table
-python3 render_report.py    # merges metrics + quality scores
-python3 build_report_pdf.py # renders the PDF report
-```
-
-### Per-prompt table
-
-| Prompt | Suite | Gen t/s | Think % | Quality |
-|--------|-------|---------|---------|---------|
-| code | general | 19.9 | 15% | 8 |
-| iambic | general | 20.0 | 91% | 4 |
-| prose | general | 20.1 | 100% | 7 |
-| creative | general | 20.1 | 100% | 3 |
-| math | general | 20.0 | 98% | 8 |
-| html | coding | 20.1 | 73% | 7 |
-| python | coding | 20.0 | 3% | 8 |
-| c | coding | 19.9 | 15% | 8 |
-| basic | coding | 20.1 | 93% | 4 |
-| julia | coding | 20.1 | 38% | 7 |
-
-### Temperature sweep — best temp per creative task
-
-A 20-run sweep (temp 0.1–0.9, only temperature varied) found the meta-reasoning loop is **chaotic, not monotonic** — there is no single "lower temp fixes it" curve. Best temperature is prompt-dependent:
-
-| Task type | Best temp | Quality | Finding |
-|-----------|-----------|---------|---------|
-| Creative fiction | **0.9** | 7/10 | Only temp that commits to actual prose |
-| Expository prose | 0.5–0.9 | 8/10 | Robust at *every* temp — does not loop |
-| Strict-form poetry | 0.3 | 3/10 | Weakest task; wrong meter/rhyme even at best |
-| Code / structured | 0.7 | 6/10 | Closest to correct output |
-
-Key corrections and findings (full data in `results/temp_sweep_quality.json`):
-- **Prose never loops.** The main benchmark's "100% thinking" for prose was a false positive — the naive thinking/answer splitter flagged complete explanations as loops because they lack a "Final Answer" marker.
-- **creative@0.9 is the single strongest creative result** (7/10): high temperature lets the model commit to prose instead of re-planning.
-- **basic@0.3 was the worst run of the entire sweep** (426s, 32K chars of pure loop, zero output) — evidence the loop is chaotic, not a smooth function of temperature.
-- Generation speed stays ~20 tok/s regardless of temperature, but **wall time explodes** on loop runs (426s vs ~35s for a clean answer).
-
-### `think-creative.sh`
-
-The findings are baked into a second launcher for open-ended creative prompts:
-
-```bash
-./think-creative.sh "Write a scene..."                  # fiction -> temp 0.9
-./think-creative.sh --style poetry "Write a sonnet..."  # temp 0.3
-./think-creative.sh --style prose "Explain..."          # temp 0.5
-./think-creative.sh --style code "Write a program..."   # temp 0.7
-```
-
-It also uses a moderate context (4096) and token budget (1200) — creative tasks don't need 32K context, and a smaller budget prevents endless re-planning.
-
-### Older benchmark (prior project, temp 0.3)
-
-| Quant | Size | Gen tok/s | Prompt tok/s |
-|-------|------|-----------|--------------|
-| Q8_0 | 3.37 GB | 19.2 | 279 |
-| Q4_K_M | 2.1 GB | **20–21** | 172–309 |
-
-Q4_K_M is chosen for this project because the smaller weights free ~1.3 GB, which is exactly what buys the larger context windows (16K–32K) for deep thinking. Measured on this Jetson, August 2026: the Q4_K_M model correctly solved both the "strawberry r-count" (3) and the bat-and-ball ($0.05) problems with the deep-thinking settings at temp 1.0.
+---
 
 ## Files
 
 ```
 deep-smallthinker-3b/
-├── think.sh                        # main launch script (single-turn deep reasoning)
-├── think-creative.sh               # creative-form launcher (temp per style from sweep)
-├── benchmark.py                    # runs the 10-prompt benchmark suite
-├── temp_sweep.py                   # temperature sweep (only temp varies, 20 runs)
-├── score_quality.py                # metrics summary (tok/s, thinking ratio)
-├── render_report.py                # merges metrics + quality scores
-├── build_report_pdf.py             # renders the PDF report (reportlab)
-├── Deep_SmallThinker_3B_Benchmark_Report.pdf   # the findings PDF
+├── think-auto.sh               # auto-temperature launcher (recommended)
+├── think.sh                    # deep reasoning launcher (manual temp)
+├── think-creative.sh           # creative launcher (temp per --style)
+├── auto_temp.py                # the temperature classifier
+├── benchmark.py                # 10-prompt benchmark suite
+├── temp_sweep.py               # temperature sweep (20 runs)
+├── score_quality.py            # metrics + quality scoring
+├── render_report.py            # merges metrics + scores
+├── build_report_pdf.py         # renders the PDF report
+├── Deep_SmallThinker_3B_Benchmark_Report.pdf
 ├── scripts/
-│   └── download-model.sh           # fetches the Q4_K_M GGUF
+│   └── download-model.sh       # fetches the Q4_K_M model
 ├── prompts/
-│   └── samples.txt                 # reasoning test prompts (traps, math, logic, code)
-├── results/
-│   ├── benchmark_results.json      # raw per-prompt metrics + full output text
-│   ├── benchmark_summary.json      # metrics summary
-│   ├── benchmark_final.json        # merged metrics + quality scores
-│   └── quality_scores.json         # 1-10 quality scores + key finding
+│   └── samples.txt             # test prompts
+├── results/                    # all benchmark data (JSON)
 └── README.md
 ```
 
+---
+
+## Re-running the benchmarks
+
+```bash
+python3 benchmark.py        # ~15 min, 10 prompts at temp 1.0
+python3 temp_sweep.py       # ~30 min, 20 runs at temps 0.1–0.9
+python3 score_quality.py    # print metrics summary
+python3 render_report.py    # merge metrics + quality scores
+python3 build_report_pdf.py # render the PDF report
+```
+
+---
+
 ## Disclaimer
 
-SmallThinker-3B is a research preview. Its reasoning output should be treated as a draft and verified — do not rely on it for consequential decisions.
+SmallThinker-3B is a research preview. Its reasoning output should be treated as a draft and verified — do not rely on it for consequential decisions. The model got "strawberry" wrong (said 2, correct is 3) on the Q8_0 at temp 0.6, though it got it right on Q4_K_M at temp 1.0. Always sanity-check.
