@@ -160,6 +160,36 @@ python3 build_report_pdf.py # renders the PDF report
 | basic | coding | 20.1 | 93% | 4 |
 | julia | coding | 20.1 | 38% | 7 |
 
+### Temperature sweep — best temp per creative task
+
+A 20-run sweep (temp 0.1–0.9, only temperature varied) found the meta-reasoning loop is **chaotic, not monotonic** — there is no single "lower temp fixes it" curve. Best temperature is prompt-dependent:
+
+| Task type | Best temp | Quality | Finding |
+|-----------|-----------|---------|---------|
+| Creative fiction | **0.9** | 7/10 | Only temp that commits to actual prose |
+| Expository prose | 0.5–0.9 | 8/10 | Robust at *every* temp — does not loop |
+| Strict-form poetry | 0.3 | 3/10 | Weakest task; wrong meter/rhyme even at best |
+| Code / structured | 0.7 | 6/10 | Closest to correct output |
+
+Key corrections and findings (full data in `results/temp_sweep_quality.json`):
+- **Prose never loops.** The main benchmark's "100% thinking" for prose was a false positive — the naive thinking/answer splitter flagged complete explanations as loops because they lack a "Final Answer" marker.
+- **creative@0.9 is the single strongest creative result** (7/10): high temperature lets the model commit to prose instead of re-planning.
+- **basic@0.3 was the worst run of the entire sweep** (426s, 32K chars of pure loop, zero output) — evidence the loop is chaotic, not a smooth function of temperature.
+- Generation speed stays ~20 tok/s regardless of temperature, but **wall time explodes** on loop runs (426s vs ~35s for a clean answer).
+
+### `think-creative.sh`
+
+The findings are baked into a second launcher for open-ended creative prompts:
+
+```bash
+./think-creative.sh "Write a scene..."                  # fiction -> temp 0.9
+./think-creative.sh --style poetry "Write a sonnet..."  # temp 0.3
+./think-creative.sh --style prose "Explain..."          # temp 0.5
+./think-creative.sh --style code "Write a program..."   # temp 0.7
+```
+
+It also uses a moderate context (4096) and token budget (1200) — creative tasks don't need 32K context, and a smaller budget prevents endless re-planning.
+
 ### Older benchmark (prior project, temp 0.3)
 
 | Quant | Size | Gen tok/s | Prompt tok/s |
@@ -174,7 +204,9 @@ Q4_K_M is chosen for this project because the smaller weights free ~1.3 GB, whic
 ```
 deep-smallthinker-3b/
 ├── think.sh                        # main launch script (single-turn deep reasoning)
+├── think-creative.sh               # creative-form launcher (temp per style from sweep)
 ├── benchmark.py                    # runs the 10-prompt benchmark suite
+├── temp_sweep.py                   # temperature sweep (only temp varies, 20 runs)
 ├── score_quality.py                # metrics summary (tok/s, thinking ratio)
 ├── render_report.py                # merges metrics + quality scores
 ├── build_report_pdf.py             # renders the PDF report (reportlab)

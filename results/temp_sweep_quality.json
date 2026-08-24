@@ -1,0 +1,47 @@
+{
+  "model": "SmallThinker-3B-Preview (Q4_K_M)",
+  "note": "Temperature sweep on open-ended prompts. ONLY temp varied (0.1-0.9); ctx=32768, n=8192, top_p=0.95, top_k=40, rep=1.1 fixed.",
+  "methodology_correction": "The 'answer_chars=0 -> 100% loop' reading is WRONG for prose. Prose outputs are complete explanations that simply lack a 'Final Answer' marker, so the naive thinking/answer splitter misclassifies them as loops. Distinguish (a) genuine meta-loop (output is 'I need to write X... first I should...' with no deliverable) from (b) complete-but-unmarked output (full explanation, just no delimiter).",
+  "quality_scores": {
+    "iambic": {
+      "0.1": {"score": 2, "note": "Meta-loop, no poem"},
+      "0.3": {"score": 3, "note": "Only temp that emitted a poem, but wrong meter (7-8 syllables, not iambic pentameter) and wrong rhyme (AABB not ABAB CDCD)"},
+      "0.5": {"score": 2, "note": "Meta-loop, no poem"},
+      "0.7": {"score": 2, "note": "Meta-loop, no poem"},
+      "0.9": {"score": 2, "note": "Meta-loop, no poem"},
+      "best": 0.3
+    },
+    "creative": {
+      "0.1": {"score": 2, "note": "Meta-loop, no scene"},
+      "0.3": {"score": 3, "note": "Mixed meta-commentary + scene fragments, no clean scene"},
+      "0.5": {"score": 2, "note": "Meta-loop, no scene"},
+      "0.7": {"score": 2, "note": "Meta-loop, no scene"},
+      "0.9": {"score": 7, "note": "Real scene with dialogue, sensory detail, atmosphere — clearly the best"},
+      "best": 0.9
+    },
+    "basic": {
+      "0.1": {"score": 4, "note": "Partial program, buggy (GOSUB to missing line, undefined vars)"},
+      "0.3": {"score": 1, "note": "Worst run overall — 426s, 32K chars of pure loop, zero output"},
+      "0.5": {"score": 5, "note": "Complete but wrong dialect (WHILE/WEND, SUB/END SUB, IF/ENDIF — modern BASIC, not TRS-80)"},
+      "0.7": {"score": 6, "note": "Closest to correct TRS-80 BASIC (line numbers, GOTO, PRINT/INPUT)"},
+      "0.9": {"score": 5, "note": "TRS-80 style with DIM arrays, but incomplete"},
+      "best": 0.7
+    },
+    "prose": {
+      "0.1": {"score": 8, "note": "Clean, complete, proper 'In summary' conclusion"},
+      "0.3": {"score": 6, "note": "Bloated (12K chars) with hallucinated Acknowledgments/Disclaimer/contact email"},
+      "0.5": {"score": 8, "note": "Complete with References + Keywords — thorough"},
+      "0.7": {"score": 8, "note": "Complete + differential diagnosis discussion"},
+      "0.9": {"score": 8, "note": "Complete with stage progression"},
+      "best": "0.5-0.9 (robust across all temps)"
+    }
+  },
+  "findings": [
+    "The meta-reasoning loop is CHAOTIC, not monotonic in temperature. There is no 'lower temp fixes it' curve.",
+    "Best temperature is prompt-dependent: creative fiction 0.9, strict-form poetry 0.3 (and still weak), code 0.7, expository prose robust 0.1-0.9.",
+    "creative@0.9 (7/10) is the single strongest result of the whole sweep — high temp lets the model commit to actual prose instead of re-planning.",
+    "Expository prose (medical explanation) does NOT loop at any temperature — the earlier '100% loop' was a false positive from a naive thinking/answer splitter.",
+    "Strict-form poetry (iambic pentameter) is the model's weakest creative task: it emits a poem at only one temp (0.3) and even that violates meter and rhyme scheme.",
+    "Generation speed stays ~20 tok/s regardless of temperature (memory-bandwidth bound), but WALL TIME explodes on loop runs (426s at basic@0.3 vs 35s for a clean answer)."
+  ]
+}
