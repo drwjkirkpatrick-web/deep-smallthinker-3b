@@ -2,7 +2,7 @@
 
 A single-command way to run [SmallThinker-3B](https://huggingface.co/PowerInfer/SmallThinker-3B-Preview) — a small AI model that "thinks out loud" before it answers — on an 8GB Jetson. You ask one question, it shows you its full chain of thought, then gives you the answer. No setup between questions, no interactive loop, just ask-and-answer.
 
-This project includes something most don't: an **automatic temperature adjuster** that reads your prompt and picks the best settings for it. We tested 20 different temperature-and-prompt combinations to find what works, and the launcher uses those findings automatically.
+This project includes something most don't: an **automatic settings adjuster** that reads your prompt and picks the best temperature *and sampling parameters* for it. We ran 65 experiments total (a 20-run temperature sweep + a 45-run variable sweep) to find what works, and the launchers use those findings automatically.
 
 ---
 
@@ -70,22 +70,24 @@ sudo systemctl start gdm3
 
 ## Step 4: Ask a question
 
-### The easy way — automatic temperature
+### The easy way — automatic settings
 
 ```bash
 ./think-auto.sh "A bat and a ball cost $1.10 total. The bat costs $1 more than the ball. How much does the ball cost?"
 ```
 
-That's it. The auto-adjuster reads your prompt, figures out what kind of question it is, and picks the best temperature for it. You'll see:
+That's it. The auto-adjuster reads your prompt, figures out what kind of question it is, and picks the best temperature *and sampling parameters* for it. You'll see:
 
 ```
-== think-auto.sh (auto temperature) ==
+== think-auto.sh (auto-tuned) ==
   prompt:    A bat and a ball cost $1.10 total. The bat costs $1 more...
   style:     reasoning
-  temp:      1.0  ← auto-selected
+  temp:      1.0  (auto-selected)
   context:   32768
   tokens:    16384
-========================================
+  top_p:     0.80  |  top_k: 80  |  repeat: 1.10
+  [tuned via 45-run variable sweep]
+=================================
 
 <thousands of words of chain-of-thought reasoning>
 
@@ -96,17 +98,21 @@ The ball costs $0.05.
 
 ### What the auto-adjuster does
 
-It classifies your prompt into one of five categories and uses the best temperature we found for each:
+It classifies your prompt into one of five categories and uses the best temperature + sampling parameters we found for each through 65 experiments:
 
-| Your prompt asks for... | Auto-detected as... | Temperature | Why |
-|-------------------------|---------------------|-------------|-----|
-| Math, proofs, algorithms, logic | reasoning | 1.0 | High temp lets it explore the reasoning tree — and since there's a checkable answer, exploration helps |
-| A story, scene, or narrative | fiction | 0.9 | The only temperature where the model commits to actual prose instead of planning forever |
-| A poem, sonnet, or verse | poetry | 0.3 | Lower temp keeps the model from spiraling (though poetry is its weakest skill) |
-| An explanation or description | prose | 0.5 | Prose is robust at any temperature; 0.5 is the sweet spot for thoroughness |
-| A game, retro code, or interactive program | code | 0.7 | Closest to correct output for creative/structured code |
+| Your prompt asks for... | Auto-detected as... | Temp | top_p | top_k | rep | Why |
+|-------------------------|---------------------|------|-------|-------|-----|-----|
+| Math, proofs, algorithms | reasoning | 1.0 | 0.80 | 80 | 1.10 | High temp explores; rep=1.10 is the only value that produces complete proofs (5/5 elements) |
+| A story, scene, narrative | fiction | 0.9 | 0.90 | 80 | 1.20 | High top_k skips the thinking loop; rep=1.20 prevents output bloat (33s vs 160s) |
+| A poem, sonnet, verse | poetry | 0.3 | 0.90 | 80 | 1.20 | Lower temp prevents the spiral (poetry is still its weakest skill) |
+| An explanation or description | prose | 0.5 | 0.90 | 80 | 1.20 | Prose is robust everywhere; these settings are fast and clean |
+| A game, retro code, interactive | code | 0.7 | 1.00 | 40 | 1.20 | top_k=40 for code (80 over-generates); rep=1.20 is 2.6x faster with same quality |
 
-> **How did we find these numbers?** We ran a 20-experiment temperature sweep — 4 prompt types × 5 temperatures (0.1, 0.3, 0.5, 0.7, 0.9) — keeping everything else fixed and changing *only* the temperature. Full data is in `results/temp_sweep_quality.json`.
+> **How did we find these numbers?** Two rounds of experiments:
+> 1. **Temperature sweep** (20 runs): 4 prompt types x 5 temperatures (0.1-0.9), only temperature changed
+> 2. **Variable sweep** (45 runs): 3 prompts x 5 values x 3 variables (top_p, top_k, repeat_penalty), only one variable changed per sweep, 32K context fixed
+>
+> Full data: `results/temp_sweep_quality.json` and `results/variable_sweep_quality.json`.
 
 ### The manual way — if you want control
 
@@ -139,15 +145,15 @@ The output has two parts:
 
 ## The three launchers
 
-| Script | When to use | Temperature | Context | Tokens |
-|--------|-------------|-------------|---------|--------|
-| `think-auto.sh` | Default — let it auto-adjust | Auto (0.3–1.0) | Auto | Auto |
-| `think.sh` | Deep reasoning, manual control | 1.0 (override with `TEMP=`) | 32K (max mode) | 16K |
-| `think-creative.sh` | Creative writing, manual style pick | Per style (0.3–0.9) | 4K | 1.2K |
+| Script | When to use | Temperature | top_p | top_k | rep | Context | Tokens |
+|--------|-------------|-------------|-------|-------|-----|---------|--------|
+| `think-auto.sh` | Default — let it auto-adjust | Auto (0.3–1.0) | Auto | Auto | Auto | Auto | Auto |
+| `think.sh` | Deep reasoning, manual control | 1.0 | 0.80 | 80 | 1.10 | 32K (max mode) | 16K |
+| `think-creative.sh` | Creative writing, manual style pick | Per style (0.3–0.9) | Per style | Per style | Per style | 4K | 1.2K |
 
 ---
 
-## How the temperature adjuster works
+## How the auto-adjuster works
 
 SmallThinker has a quirk: on open-ended creative tasks, it can fall into a **meta-reasoning loop**. Instead of writing the scene you asked for, it writes:
 
@@ -155,7 +161,20 @@ SmallThinker has a quirk: on open-ended creative tasks, it can fall into a **met
 
 ...and it does this for the entire 8,000-token budget, never writing the actual scene. This happens at *most* temperatures, and it's **not predictable** — the same prompt at temp 0.3 might work while temp 0.5 loops, and temp 0.9 might be the best for one creative task but the worst for another.
 
-Our 20-run sweep found the best temperature for each task type (see the table in Step 4). The `auto_temp.py` classifier reads your prompt, matches it against keyword patterns for each category, and outputs the winning temperature. It's a simple keyword classifier — no AI needed for the classification itself, just pattern matching.
+We fixed this in two rounds:
+
+**Round 1 — Temperature sweep** (20 runs): Tested 4 creative prompt types at 5 temperatures (0.1, 0.3, 0.5, 0.7, 0.9), changing only temperature. Found the best temp per task type: fiction 0.9, prose 0.5, poetry 0.3, code 0.7.
+
+**Round 2 — Variable sweep** (45 runs): Tested 3 variables (top_p, top_k, repeat_penalty) at 5 values each, across 3 representative prompts, changing only one variable at a time. 32K context fixed throughout. Key findings:
+
+- **top_k=40 (the common default) is the worst value for reasoning** — 98s vs 37s at top_k=80. Switching to 80 makes reasoning 2.6x faster with the same proof quality.
+- **repeat_penalty=1.1 is the only value that produces complete proofs** — 1.0 and 1.05 skip key mathematical steps (2/5 proof elements vs 5/5 at 1.1).
+- **repeat_penalty=1.2 is universally faster for creative and coding** — 33–49s vs 47–130s at 1.1, with identical quality scores. It prevents the model from padding output.
+- **Coding quality is robust** — 14/15 runs scored 7/7 code elements. Only top_k=60 missed docstrings. Coding doesn't need fine-tuning.
+- **Creative quality is robust** — all 15 runs scored 5/5 scene elements. The differentiator is speed, not quality.
+- **Reasoning is the most sensitive** — proof completeness varies 2/5 to 5/5 depending on repeat_penalty. This is the variable that matters most for math/logic.
+
+The `auto_temp.py` classifier reads your prompt, matches it against keyword patterns for each category, and outputs the winning temperature + context + token budget. `think-auto.sh` then maps the style to the tuned top_p/top_k/repeat_penalty from the variable sweep.
 
 ```bash
 # See what it picks for any prompt
@@ -200,6 +219,9 @@ All scripts accept environment variables for manual control:
 | `CTX` | per mode | Override the context window size |
 | `N_TOKENS` | per mode | Override the max output tokens |
 | `MODEL` | `~/models/smallthinker-3b-q4_k_m.gguf` | Path to the model file |
+| `TOP_P` | per script | Override nucleus sampling threshold |
+| `TOP_K` | per script | Override top-K sampling |
+| `REPEAT_PENALTY` | per script | Override repetition penalty |
 | `LLAMA_CLI` | `~/llama.cpp/build/bin/llama-cli` | Path to the llama.cpp binary |
 
 ---
@@ -231,7 +253,14 @@ We benchmarked this model with the same 10-prompt suite from our prior LLM bench
 
 **Temperature sweep**: A 20-run sweep (temp 0.1–0.9, only temperature varied) found the loop is chaotic, not monotonic. Best temperature is prompt-dependent. Creative fiction works best at 0.9, prose is robust everywhere, poetry is weak at all temperatures, creative code works best at 0.7.
 
-Full benchmark data: `results/benchmark_results.json`, `results/temp_sweep_quality.json`, and `Deep_SmallThinker_3B_Benchmark_Report.pdf`.
+**Variable sweep**: A 45-run sweep (top_p, top_k, repeat_penalty at 5 values each, 3 prompts, only one variable changed at a time, 32K context fixed) found the biggest wins in speed, not quality:
+- top_k=80 makes reasoning 2.6x faster than the common default of 40 (37s vs 98s)
+- repeat_penalty=1.10 is the only value that produces complete mathematical proofs (5/5 proof elements)
+- repeat_penalty=1.20 makes creative and coding 2.6x faster with identical quality scores
+- Coding and creative quality are robust across all values (7/7 code elements, 5/5 scene elements)
+- Reasoning is the most sensitive variable — proof completeness varies from 2/5 to 5/5
+
+Full benchmark data: `results/benchmark_results.json`, `results/temp_sweep_quality.json`, `results/variable_sweep_quality.json`, and `Deep_SmallThinker_3B_Benchmark_Report.pdf`.
 
 ---
 
@@ -239,12 +268,13 @@ Full benchmark data: `results/benchmark_results.json`, `results/temp_sweep_quali
 
 ```
 deep-smallthinker-3b/
-├── think-auto.sh               # auto-temperature launcher (recommended)
-├── think.sh                    # deep reasoning launcher (manual temp)
-├── think-creative.sh           # creative launcher (temp per --style)
-├── auto_temp.py                # the temperature classifier
+├── think-auto.sh               # auto-tuned launcher (recommended)
+├── think.sh                    # deep reasoning launcher (manual, tuned defaults)
+├── think-creative.sh           # creative launcher (tuned per --style)
+├── auto_temp.py                # the prompt classifier
 ├── benchmark.py                # 10-prompt benchmark suite
 ├── temp_sweep.py               # temperature sweep (20 runs)
+├── variable_sweep.py           # variable sweep (45 runs)
 ├── score_quality.py            # metrics + quality scoring
 ├── render_report.py            # merges metrics + scores
 ├── build_report_pdf.py         # renders the PDF report
@@ -264,6 +294,7 @@ deep-smallthinker-3b/
 ```bash
 python3 benchmark.py        # ~15 min, 10 prompts at temp 1.0
 python3 temp_sweep.py       # ~30 min, 20 runs at temps 0.1–0.9
+python3 variable_sweep.py  # ~45 min, 45 runs (top_p, top_k, repeat_penalty)
 python3 score_quality.py    # print metrics summary
 python3 render_report.py    # merge metrics + quality scores
 python3 build_report_pdf.py # render the PDF report

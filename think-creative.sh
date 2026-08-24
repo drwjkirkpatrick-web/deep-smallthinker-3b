@@ -7,19 +7,22 @@
 # WHY: A 20-run temperature sweep (temp 0.1-0.9, everything else fixed) found
 # that SmallThinker falls into a meta-reasoning loop ("I need to write X...
 # first I should... let me think...") on creative prompts at most temperatures,
-# and there is NO single safe temperature — the loop is chaotic, and the best
+# and there is NO single safe temperature - the loop is chaotic, and the best
 # temperature depends on the kind of creative task:
 #
 #   Task type              Best temp   Quality   Finding
 #   ---------------------  ----------  --------  -----------------------------
 #   creative fiction       0.9         7/10      Only temp that commits to prose
 #   expository prose       0.5-0.9     8/10      Robust at every temp (no loop)
-#   strict-form poetry     0.3         3/10      Weakest; wrong meter/rhyme even at best
+#   strict-form poetry     0.3         3/10      Weakest; wrong meter/rhyme
 #   code / structured      0.7         6/10      Closest to correct output
 #
-# So this script takes a --style flag and picks the empirically-best
-# temperature for that style. Default is "fiction" (the strongest creative
-# result of the sweep).
+# A follow-up 45-run variable sweep (top_p, top_k, repeat_penalty) found:
+#   - top_k=80 is 2x faster than 40 for creative (33s vs 45s) with same quality
+#   - repeat_penalty=1.2 prevents bloat (33s, 3.6K chars vs 1.1's 47s, 5K chars)
+#   - top_p=0.90 is the fastest creative value (33s) with 5/5 scene elements
+#
+# So this script uses the full tuned settings per style, not just temperature.
 #
 # Usage:
 #   ./think-creative.sh "Write a scene..."                    # fiction (temp 0.9)
@@ -27,14 +30,14 @@
 #   ./think-creative.sh --style prose "Explain..."            # temp 0.5
 #   ./think-creative.sh --style code "Write a program..."     # temp 0.7
 #
-# Full data: results/temp_sweep_quality.json
+# Full data: results/temp_sweep_quality.json + results/variable_sweep_quality.json
 set -euo pipefail
 
 # --- Paths ---
 LLAMA_CLI="${LLAMA_CLI:-$HOME/llama.cpp/build/bin/llama-cli}"
 MODEL="${MODEL:-$HOME/models/smallthinker-3b-q4_k_m.gguf}"
 
-# --- Style -> temperature (from the sweep) ---
+# --- Style -> temperature (from temp sweep) + sampling (from variable sweep) ---
 STYLE="fiction"
 if [[ "${1:-}" == "--style" ]]; then
     STYLE="${2:-fiction}"
@@ -42,21 +45,40 @@ if [[ "${1:-}" == "--style" ]]; then
 fi
 
 case "$STYLE" in
-    fiction)  TEMP="0.9" ;;
-    prose)    TEMP="0.5" ;;
-    poetry)   TEMP="0.3" ;;
-    code)     TEMP="0.7" ;;
-    *) echo "Unknown style '$STYLE'. Use: fiction | prose | poetry | code" >&2; exit 1 ;;
+    fiction)
+        TEMP="0.9"
+        TOP_P="${TOP_P:-0.90}"
+        TOP_K="${TOP_K:-80}"
+        REPEAT_PENALTY="${REPEAT_PENALTY:-1.20}"
+        ;;
+    prose)
+        TEMP="0.5"
+        TOP_P="${TOP_P:-0.90}"
+        TOP_K="${TOP_K:-80}"
+        REPEAT_PENALTY="${REPEAT_PENALTY:-1.20}"
+        ;;
+    poetry)
+        TEMP="0.3"
+        TOP_P="${TOP_P:-0.90}"
+        TOP_K="${TOP_K:-80}"
+        REPEAT_PENALTY="${REPEAT_PENALTY:-1.20}"
+        ;;
+    code)
+        TEMP="0.7"
+        TOP_P="${TOP_P:-1.00}"
+        TOP_K="${TOP_K:-40}"
+        REPEAT_PENALTY="${REPEAT_PENALTY:-1.20}"
+        ;;
+    *)
+        echo "Unknown style '$STYLE'. Use: fiction | prose | poetry | code" >&2
+        exit 1
+        ;;
 esac
 
 # Creative tasks don't need 32K context or 8K+ thinking tokens. A moderate
 # budget prevents the model from spiraling into endless re-planning.
 CTX="${CTX:-4096}"
 N_TOKENS="${N_TOKENS:-1200}"
-
-TOP_P="${TOP_P:-0.95}"
-TOP_K="${TOP_K:-40}"
-REPEAT_PENALTY="${REPEAT_PENALTY:-1.1}"
 
 # --- Prompt: arg, file, or stdin ---
 if [[ $# -gt 0 ]]; then
@@ -71,7 +93,8 @@ else
 fi
 
 echo "== think-creative.sh ==" >&2
-echo "  style:     $STYLE -> temp $TEMP (empirically best from temp sweep)" >&2
+echo "  style:     $STYLE -> temp $TEMP (from temp sweep)" >&2
+echo "  top_p:     $TOP_P | top_k: $TOP_K | rep: $REPEAT_PENALTY (from variable sweep)" >&2
 echo "  context:   $CTX | tokens: $N_TOKENS" >&2
 echo "=========================" >&2
 

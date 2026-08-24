@@ -5,6 +5,11 @@
 # single turn, with a high temperature (we have free tokens, so we let it
 # explore the reasoning tree) and a context sized for GUI-off operation.
 #
+# SAMPLING DEFAULTS (tuned via 45-run variable sweep, results/variable_sweep_quality.json):
+#   top_p=0.80  — focused reasoning, avoids the 2x slowdown at 0.90
+#   top_k=80    — 2.6x faster than the common default of 40 (37s vs 98s)
+#   rep=1.10    — the ONLY repeat_penalty value that produces complete proofs (5/5 elements)
+#
 # Usage:
 #   ./think.sh "your question here"
 #   PROMPT_FILE=/path/to/prompt.txt ./think.sh
@@ -28,12 +33,12 @@ case "$GUI_MODE" in
   *) echo "GUI_MODE must be one of: off | on | max" >&2; exit 1 ;;
 esac
 
-# --- Sampling: high temperature because we have free tokens ---
+# --- Sampling (tuned via 45-run variable sweep) ---
 # Temp 1.0 (the paper's recommendation) maximizes exploration of the
 # reasoning tree. Drop TEMP to 0.6 for math/code where precision > breadth.
 TEMP="${TEMP:-1.0}"
-TOP_P="${TOP_P:-0.95}"
-TOP_K="${TOP_K:-40}"
+TOP_P="${TOP_P:-0.80}"
+TOP_K="${TOP_K:-80}"
 REPEAT_PENALTY="${REPEAT_PENALTY:-1.1}"
 
 # --- Prompt: arg, file, or stdin ---
@@ -57,6 +62,7 @@ echo "  gui_mode:  $GUI_MODE" >&2
 echo "  context:   $CTX" >&2
 echo "  think_tok: $N_TOKENS" >&2
 echo "  temp:      $TEMP (top_p=$TOP_P top_k=$TOP_K rep=$REPEAT_PENALTY)" >&2
+echo "  [tuned via 45-run variable sweep]" >&2
 echo "===========================" >&2
 
 exec "$LLAMA_CLI" \

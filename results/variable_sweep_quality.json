@@ -1,0 +1,49 @@
+{
+  "model": "SmallThinker-3B-Preview (Q4_K_M)",
+  "fixed_settings": {
+    "context": 32768,
+    "n_tokens": 4096,
+    "threads": 6,
+    "temperature": "per-category best from temp sweep (reasoning=1.0, creative=0.9, coding=1.0)",
+    "note": "32K context FIXED per user instruction. Only one variable changed per sweep."
+  },
+  "methodology": "45 runs total: 3 prompts x 5 values x 3 variables (top_p, top_k, repeat_penalty). Only the swept variable changed; all others stayed at defaults (top_p=0.95, top_k=40, repeat_penalty=1.1). Quality scored by automated keyword detection for proof elements (contradiction, even/odd, p^2=2q^2, boxed, gcd), scene elements (dialogue, setting, sensory, character, atmosphere), and code elements (def, merge, recursion, split, type_hints, docstring, edge_cases).",
+  "findings": {
+    "top_p": {
+      "best_reasoning": {"value": 0.80, "score": "4/5 proof elements, 57s (2nd fastest)", "note": "Fast and complete. 0.9 is the worst (126s, 10K think chars - 2x slower for no quality gain)"},
+      "best_creative": {"value": 0.95, "score": "5/5 scene elements, 5679ch (most output), 55s", "note": "All top_p values produce 5/5 scene elements; 0.95 produces the most content. 0.9 is fastest (33s) but less content"},
+      "best_coding": {"value": 1.0, "score": "7/7 code elements, 4549ch, 45s (fastest)", "note": "All values except 0.8 get 7/7. 1.0 is fastest. 0.98 is slowest (131s) with most code (11.9K) but no quality gain"},
+      "current_default": 0.95,
+      "recommendation": "Lower to 0.90 for better speed across all categories. 0.95 is fine for creative but slow for reasoning."
+    },
+    "top_k": {
+      "best_reasoning": {"value": 80, "score": "4/5 proof elements, 37s (FASTEST)", "note": "60 gets 5/5 but takes 90s. 80 is the speed champion with near-complete proof. Current default 40 is SLOWEST at 98s"},
+      "best_creative": {"value": 60, "score": "5/5 scene elements, 4217ch (most output), 40s", "note": "60-80 skip thinking and produce more content faster. 80 is fastest (33s). Low values (0-40) think more but produce less"},
+      "best_coding": {"value": 40, "score": "7/7 code elements, 12059ch, 127s", "note": "All values get 7/7. 0 is slowest (229s). 40 is the moderate sweet spot. 80 gets 7/7 in 182s"},
+      "current_default": 40,
+      "recommendation": "Raise to 80 for reasoning (37s vs 98s). Keep 40 for coding. 60-80 for creative if you want more output."
+    },
+    "repeat_penalty": {
+      "best_reasoning": {"value": 1.1, "score": "5/5 proof elements (ONLY value to get all 5)", "note": "1.0 and 1.05 only get 2/5 (missing even/odd and p^2=2q^2). 1.1 is the only value with a complete proof. But 1.2 is slowest (161s)"},
+      "best_creative": {"value": 1.2, "score": "5/5 scene elements, 3633ch, 33s (fastest)", "note": "1.05 is worst (160s, 15K chars of bloat). 1.15 is an anomaly (94% think, only 246ch answer - loops). 1.2 is fastest and clean"},
+      "best_coding": {"value": 1.2, "score": "7/7 code elements, 5131ch, 49s (fastest)", "note": "All values get 7/7. 1.2 is fastest and most concise. 1.0-1.1 produce 2x more code but no quality gain"},
+      "current_default": 1.1,
+      "recommendation": "Keep 1.1 for reasoning (only value with 5/5 proof). Raise to 1.2 for creative and coding (faster, cleaner, same quality)."
+    }
+  },
+  "overall_recommendations": {
+    "reasoning": {"top_p": 0.80, "top_k": 80, "repeat_penalty": 1.1, "expected_time": "~40s", "rationale": "Fast (37-57s), complete proof (5/5 at rep=1.1, 4/5 at others). top_k=80 cuts reasoning time 2.6x vs current default."},
+    "creative": {"top_p": 0.90, "top_k": 80, "repeat_penalty": 1.2, "expected_time": "~33s", "rationale": "Fastest combo (33s). 5/5 scene elements. 80 skips thinking loop and produces clean output. rep=1.2 prevents bloat."},
+    "coding": {"top_p": 1.0, "top_k": 40, "repeat_penalty": 1.2, "expected_time": "~49s", "rationale": "Fastest coding (45-49s). 7/7 code elements. rep=1.2 produces concise code (5K vs 12K chars at 1.1) with same completeness."}
+  },
+  "key_insights": [
+    "top_k=40 (current default) is the WORST value for reasoning: 98s vs 37-54s at every other value. The default came from common LLM practice but is wrong for this model.",
+    "repeat_penalty=1.1 is the ONLY value that produces a complete proof (5/5 elements). 1.0 and 1.05 skip key steps. This validates the current default for reasoning.",
+    "repeat_penalty=1.2 is universally faster for creative and coding (33-49s vs 47-130s) with identical quality scores. It prevents the model from padding output.",
+    "top_p=0.90 is the worst value for reasoning (126s, 2x slower) but fine for creative. The current 0.95 default is a reasonable middle ground; 0.80 is better for reasoning specifically.",
+    "Coding quality is robust: 14/15 runs get 7/7 code elements. Only top_k=60 misses docstrings (6/7). Coding is not sensitive to these variables.",
+    "Creative quality is also robust: all 15 runs get 5/5 scene elements. The differentiator is speed and output length, not quality.",
+    "Reasoning is the most sensitive: proof completeness varies 2/5 to 5/5 depending on repeat_penalty. This is the variable that matters most for math/logic.",
+    "Speed costs of current defaults vs optimized: reasoning 98s->37s (2.6x), creative 47s->33s (1.4x), coding 127s->49s (2.6x)."
+  ]
+}
